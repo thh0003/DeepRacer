@@ -1,5 +1,5 @@
-#Basic Racer - 100% completion after 30 mins
-#tbone-003
+# model name: tbone-015
+# 
 import math
 
 def inside_borders(params):
@@ -21,10 +21,8 @@ def inside_borders(params):
         reward = 0.50
     
     bonus_reward = ((0.5*track_width)-distance_from_center)/(0.5*track_width)
-    if bonus_reward < 0.25:
-        bonus_reward = 0
-    elif bonus_reward > .75:
-        bonus_reward = 1.25
+    if bonus_reward > 0.80:
+        bonus_reward = bonus_reward * 3.00
     reward += bonus_reward
     # Always return a float value
     return reward
@@ -39,16 +37,16 @@ def speed(params):
     speed = params['speed']
 
     # Set the speed threshold based your action space 
-    SPEED_THRESHOLD = 2.75 
+    SPEED_THRESHOLD = 2.00 
 
-    if speed < SPEED_THRESHOLD:
-        # Penalize if the car goes too slow
-        reward = 0.5
-    else:
-        # High reward if the car stays on track and goes fast
-        reward = 1.0
+    # if speed < SPEED_THRESHOLD:
+    #     # Penalize if the car goes too slow
+    #     reward = 0.00
+    # else:
+    #     # High reward if the car stays on track and goes fast
+    #     reward = 1.0
 
-    return reward
+    return 1.00 * ((speed/SPEED_THRESHOLD) ** 2)
 
 def follow_centerline(params):
     '''
@@ -58,25 +56,12 @@ def follow_centerline(params):
     # Read input parameters
     track_width = params['track_width']
     distance_from_center = params['distance_from_center']
-    
-    # Calculate 3 markers that are at varying distances away from the center line
-    marker_1 = 0.1 * track_width
-    marker_2 = 0.2 * track_width
-    marker_3 = 0.3 * track_width
-    marker_4 = 0.4 * track_width
-    marker_5 = 0.5 * track_width
-    
+    delta = (track_width*.50)-distance_from_center
     # Give higher reward if the car is closer to center line and vice versa
-    if distance_from_center <= marker_1:
-        reward = 1.5
-    elif distance_from_center <= marker_2:
-        reward = 0.8
-    elif distance_from_center <= marker_3:
-        reward = 0.6
-    elif distance_from_center <= marker_4:
-        reward = 0.4
-    elif distance_from_center <= marker_5:
-        reward = 0.2
+    if distance_from_center == 0:
+        reward = 3.0
+    elif distance_from_center < (track_width * .50):
+        reward = 3.0 * ((delta/(track_width*.50)) ** 2)
     else:
         reward = 0  # likely crashed/ close to off track
     
@@ -134,8 +119,8 @@ def reward_function(params):
     '''
     # Read input parameters
     centerline_reward = follow_centerline(params)
-    inside_reward = inside_borders(params)
-#    speed_reward = speed(params)
+    #inside_reward = inside_borders(params)
+    speed_reward = speed(params)
 #    direction_reward = direction_and_waypoint(params)
 
-    return float(centerline_reward+inside_reward)
+    return float(centerline_reward+speed_reward)
