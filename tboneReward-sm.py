@@ -1,245 +1,29 @@
 # model name: tbone-015
 # 
 import math
+from tboneDeepRacerUtils import calcDistanceFromCenter, getClosestWaypoints, getDistanceCenterLine,getCurLocation,inside_borders,speed,progress,direction_and_waypoint,follow_centerline
+from tboneDeepRacerHistory import HISTORY
+from tboneDeepRacerRaceStep import RaceStep
+import csv
 
-class HISTORY:
-    stepsPerSecond = 16
-    lookAheadSteps = 5
-    prev_speed=None
-    prev_steering_angle=None
-    prev_steps=None
-    prev_distance_centerline=None
-    prev_location=(0.00,0.00)
-    step_duration = float(1 / stepsPerSecond)
-    prev_total_reward = None
-    prev_heading = None
-    prev_closest_waypoints = None
-
-class RaceStep:
-    def __init__(self, stepParams, params, stepNum):
-        if stepNum == 0:
-            self.location = HISTORY.prev_location 
-            self.closest_waypoints = HISTORY.prev_closest_waypoints if HISTORY.prev_closest_waypoints != None else (0,1)
-            print("closest_waypoints: "+str(self.closest_waypoints))
-            self.distance_from_center = HISTORY.prev_distance_centerline if HISTORY.prev_distance_centerline != None else 0.00
-            print("distance_from_center: "+str(self.distance_from_center))
-            self.onTrack = True if (params["track_width"]*.5)>self.distance_from_center else False
-            self.stepReward = self.calcStepReward(stepParams, params) if self.onTrack else 0
-            self.stepNumber = stepParams["stepNumber"]
-        elif stepNum == 1:
-            self.location = stepParams["location"]
-            self.closest_waypoints = params["closest_waypoints"]
-            print("closest_waypoints: "+str(self.closest_waypoints))
-            self.distance_from_center = params["distance_from_center"]
-            print("distance_from_center: "+str(self.distance_from_center))
-            self.onTrack = True if (params["track_width"]*.5)>self.distance_from_center else False            
-            self.stepReward = self.calcStepReward(stepParams, params) if self.onTrack else 0
-            self.stepNumber = stepParams["stepNumber"]
-        else:
-            self.location = stepParams["location"]
-            self.closest_waypoints = getClosestWaypoints(self.location, stepParams, params)
-            print("closest_waypoints: "+str(self.closest_waypoints))
-            self.distance_from_center = calcDistanceFromCenter(self.closest_waypoints,self.location,stepParams,params)
-            print("distance_from_center: "+str(self.distance_from_center))
-            self.onTrack = True if (params["track_width"]*.5)>self.distance_from_center else False
-            self.stepReward = self.calcStepReward(stepParams, params) if self.onTrack else 0
-            self.stepNumber = stepParams["stepNumber"]
-
-    def calcStepReward(self, stepParams, params):
-        rewardParams = params.copy()
-        rewardParams["distance_from_center"] = self.distance_from_center
-        rewardParams["closest_waypoints"]= self.closest_waypoints
-        centerline_reward = follow_centerline(rewardParams)
-        #inside_reward = inside_borders(rewardParams)
-        #speed_reward = speed(rewardParams)
-#        direction_reward = direction_and_waypoint(rewardParams)
-#        curProg = progress(rewardParams)
-        #print("CenterLine: "+str(centerline_reward)+" Direction Reward: "+str(direction_reward)+"Progress: "+str(curProg))
-        #print("CenterLine: "+str(centerline_reward)+" Direction Reward: "+str(direction_reward)+" Speed: "+str(speed_reward))
-        #print("CenterLine: "+str(centerline_reward))
-#        return float(centerline_reward+direction_reward+curProg)
-        return float(centerline_reward)
+stepRewardsCSV = open ("stepRewards.csv", "w", newline='')
+stepLocationsCSV = open ("stepLocations.csv", "w", newline='')
 
 
-def calcDistanceFromCenter(closest_waypoints,location,stepParams, params):
-    waypoints = params["waypoints"]
-    segGH = (location[1]-waypoints[closest_waypoints[0]][1]) if closest_waypoints[0] != -1 else (location[1]-waypoints[0][1])
-    segOG = (location[0]-waypoints[closest_waypoints[0]][0]) if closest_waypoints[0] != -1 else (location[1]-waypoints[0][0])
-    stepHeading = params["heading"]
-    # print("Closest Waypoints: ")
-    # print(str(closest_waypoints))
-    wayPointY = waypoints[closest_waypoints[1]][1]-waypoints[closest_waypoints[0]][1]
-    wayPointX = waypoints[closest_waypoints[1]][0]-waypoints[closest_waypoints[0]][0]
-    wayPointZ = math.sqrt((wayPointX ** 2)+(wayPointY ** 2))
-    # Calculate the direction in radius, arctan2(dy, dx), the result is (-pi, pi) in radians
-    track_direction = math.atan2(wayPointY, wayPointX) 
-    # Convert to degree
-    track_direction = math.degrees(track_direction)
-
-    if track_direction > 90 and track_direction < 180:
-        track_direction = 180 - stepHeading
-    elif track_direction < -90 and track_direction > -180:
-        track_direction = track_direction + 180
-
-    if stepHeading > 90 and stepHeading < 180:
-        stepHeading = 180 - stepHeading
-    elif stepHeading < -90 and stepHeading > -180:
-        stepHeading = stepHeading + 180
-    if stepHeading != track_direction:
-        segOH = segGH/math.sin(stepHeading-track_direction) if stepHeading > track_direction else segGH/math.sin(track_direction - stepHeading)
-        segHZ = math.sin(stepHeading-track_direction) * segOH if stepHeading > track_direction else math.sin(track_direction-stepHeading) * segOH 
-    else:
-        segOH = 0
-        segHZ = 0
-    print("calcDistance: track_direction: "+str(track_direction)+", stepHeading: "+str(stepHeading)+", segOH: "+str(segOH)+", segHZ: "+str(segHZ))
-    return segHZ
-
-def getClosestWaypoints(location,stepParams, params):
-    waypoints=params["waypoints"]
-    startWaypoints = params["closest_waypoints"]
-    # print("startWaypoints: ")
-    # print(startWaypoints)
-    curClosestWaypointIndex = startWaypoints[0]
-    curClosestDistance = 100
-    posHeading = True if params["heading"] < 90 or params["heading"] > -90 else False
-    for num, waypoint in enumerate(params["waypoints"]):
-#        print("index: "+str(num)+" waypoint: "+str(waypoint)+" location: "+str(location))
-        xSQ = abs(waypoint[0]-location[0]) ** 2
-        ySQ = abs(waypoint[1]-location[1]) ** 2
-        z = math.sqrt((xSQ+ySQ))
-#        print("waypoint distance: "+str(z))
-        if z < curClosestDistance:
-            curClosestDistance = z
-            curClosestWaypointIndex = num
- #   print("curClosestWaypointIndex: "+str(curClosestWaypointIndex)+" location: "+str(location))
-    if posHeading:
-        if waypoints[curClosestWaypointIndex][0]>location[0]:
-            return (curClosestWaypointIndex-1,curClosestWaypointIndex) # if curClosestWaypointIndex > 0 else (0,curClosestWaypointIndex)
-        else:
-            return (curClosestWaypointIndex,curClosestWaypointIndex+1)
-    else:
-        if waypoints[curClosestWaypointIndex][0]>location[0]:
-            return (curClosestWaypointIndex,curClosestWaypointIndex-1) # if curClosestWaypointIndex > 0 else (curClosestWaypointIndex,0)
-        else:
-            return (curClosestWaypointIndex-1,curClosestWaypointIndex) # if curClosestWaypointIndex > 0 else (0,curClosestWaypointIndex)
-
-def getDistanceCenterLine (track_width, distance_from_center):
-    # Read input parameters
-    delta = (track_width*.50)-distance_from_center
-    return delta
-
-def getCurLocation(stepDuration, params):
-    stepHypo = stepDuration * params["speed"]
-    stepOpp = math.sin(params["heading"]) * stepHypo
-    stepAdj = math.cos(params["heading"]) * stepHypo
-    x = stepAdj + params["x"]
-    y = stepOpp + params["y"]
-    print("step location: "+ str(x) + ", " + str(y))
-    return (x,y)
-
-def inside_borders(params):
-    '''
-    Example of rewarding the agent to stay inside the two borders of the track
-    '''
-    
-    # Read input parameters
-    all_wheels_on_track = params['all_wheels_on_track']
-    distance_from_center = params['distance_from_center']
-    track_width = params['track_width']
-    
-    # Give a very low reward by default
-    reward = 0
-
-    # Give a high reward if no wheels go off the track and 
-    # the car is somewhere in between the track borders 
-    if all_wheels_on_track:
-        reward = 0.50
-    
-    bonus_reward = ((0.5*track_width)-distance_from_center)/(0.5*track_width)
-    if bonus_reward > 0.80:
-        bonus_reward = bonus_reward * 3.00
-    reward += bonus_reward
-    # Always return a float value
-    return reward
-
-def speed(params):
-#############################################################################
-    '''
-    speed
-    '''
-
-    # Read input variables
-    speed = params['speed']
-    track_width = params['track_width']
-    distance_from_center = params['distance_from_center']
-    # Set the speed threshold based your action space 
-    SPEED_THRESHOLD = 4.00 
-
-    if distance_from_center < (track_width * .10):
-        return 1.00 * ((speed/SPEED_THRESHOLD) ** 3)
-    else:
-        return 0
-
-def progress(params):
-    prog = params["progress"]
-    print("Progress: "+str(prog))
-    return float(1.5 * ((prog/100)**3))
-
-def follow_centerline(params):
-    '''
-    Example of rewarding the agent to follow center line
-    '''
-    
-    # Read input parameters
-    track_width = params['track_width']
-    distance_from_center = params['distance_from_center']
-    delta = (track_width*.50)-distance_from_center
-#    print("Delta: "+str(delta)+", track width: "+str(track_width))
-    # Give higher reward if the car is closer to center line and vice versa
-    if distance_from_center == 0:
-        reward = 3.0
-    else:
-        reward = 3.0 * ((delta/(track_width*.50)) ** 3)
-    
-    return float(reward)
-
-def direction_and_waypoint(params):
-    ###############################################################################
-    '''
-    Example of using waypoints and heading to make the car in the right direction
-    '''
-    # Read input variables
-    waypoints = params['waypoints']
-    closest_waypoints = params['closest_waypoints']
-    heading = params['heading']
-
-    # Initialize the reward with typical value 
-    reward = 3.0
-
-    # Calculate the direction of the center line based on the closest waypoints
-    next_point = waypoints[closest_waypoints[1]]
-    prev_point = waypoints[closest_waypoints[0]]
-
-    # Calculate the direction in radius, arctan2(dy, dx), the result is (-pi, pi) in radians
-    track_direction = math.atan2(next_point[1] - prev_point[1], next_point[0] - prev_point[0]) 
-    # Convert to degree
-    track_direction = math.degrees(track_direction)
-
-    # Calculate the difference between the track direction and the heading direction of the car
-    direction_diff = abs(track_direction - heading)
-    if direction_diff > 180:
-        direction_diff = 360 - direction_diff
-
-    # Penalize the reward if the difference is too large
-    print("Heading: "+str(heading)+", Track Direction: "+str(track_direction))
-    reward = float(reward * (((180-direction_diff)/180)**3))
-    return reward
 
 def reward_function(params):
     '''
     Use the weighted reward matrix to generate a reward
     
     '''
+    stepRewardsWriter = csv.writer(stepRewardsCSV)
+    stepLocationsWriter = csv.writer(stepLocationsCSV)
+    if HISTORY.prev_heading == None:
+        with open('trackWaypoints.csv', 'w', newline='') as csvfile:
+            csvWriter = csv.writer(csvfile)
+            for waypoint in params["waypoints"]:
+                csvWriter.writerow(waypoint)
+
     # Create Steps to Evaluate
     steps = []
     stepLocations = []
@@ -253,18 +37,18 @@ def reward_function(params):
         "distance_centerline": HISTORY.prev_distance_centerline,
         "heading": HISTORY.prev_heading,
         "stepNumber":0
-    }, params,0))
+    }, params,0,HISTORY))
     rewardTotal += steps[0].stepReward
     stepRewards.append(steps[0].stepReward)
 
-    stepLocations.append((params["x"],params["y"]))
+    stepLocations.append([params["x"],params["y"]])
     steps.append(RaceStep({
-        "location": (params["x"],params["y"]),
+        "location": [params["x"],params["y"]],
         "speed": params["speed"],
         "distance_centerline": params["distance_from_center"],
         "heading": params["heading"],
         "stepNumber":1
-    }, params,1))
+    }, params,1,HISTORY))
     rewardTotal += steps[1].stepReward
     stepRewards.append(steps[1].stepReward)
 
@@ -279,7 +63,7 @@ def reward_function(params):
             "distance_centerline": None,
             "heading": params["heading"],
             "stepNumber":curStep            
-        }, params,curStep))
+        }, params,curStep,HISTORY))
         if steps[curStep].onTrack and stillOnTrack:
             rewardTotal += steps[curStep].stepReward
             stepRewards.append(steps[curStep].stepReward)
@@ -291,10 +75,12 @@ def reward_function(params):
         curStep+=1
     print("stepLocations: ")
     print(str(stepLocations))
+    stepLocationsWriter.writerow(stepLocations)
     print("stepRewards: ")
     print(str(stepRewards))
+    stepRewardsWriter.writerow(stepRewards)
 
-    HISTORY.prev_location = (params["x"],params["y"])
+    HISTORY.prev_location = [params["x"],params["y"]]
     HISTORY.prev_speed=params["speed"]
     HISTORY.prev_steering_angle=params["steering_angle"]
     HISTORY.prev_steps=params["steps"]
@@ -324,9 +110,12 @@ def main():
         {'is_left_of_center': True, 'projection_distance': 1.0607562161378383, 'waypoints': [(2.973129727863096, 0.9587203451227853), (3.1686550001583385, 0.957973927514008), (3.3641587621388993, 0.957502662680531), (3.5596536099349976, 0.9571676056167091), (3.7551399311198708, 0.9569079073242543), (3.9506256709448877, 0.9566988842326032), (4.146107922610766, 0.9565304352142532), (4.341591530782978, 0.9563990236634121), (4.537073588662238, 0.9563010645276331), (4.732557196834449, 0.9562337963475989), (4.92803925471371, 0.9561973644632735), (5.123521506379589, 0.9561847441097273), (5.3190037580454685, 0.9562067146676283), (5.514486009711348, 0.9562466104877638), (5.709974462549027, 0.9563314648034498), (5.905463109173326, 0.9564632639275283), (6.10095815075604, 0.9566372843111675), (6.296465594682358, 0.956848729735553), (6.491997261936018, 0.9569796325965199), (6.6875785385640825, 0.9567336689306691), (6.883257677434614, 0.9557806263396478), (7.079130990497134, 0.9538671530427651), (7.275221344572657, 0.9543163504250318), (7.4705043835944585, 0.968040367211689), (7.662157411673801, 1.00506531126039), (7.845235769446617, 1.0715002572806311), (8.014446369208315, 1.1684281333446516), (8.165421648145468, 1.2924605804235763), (8.294117279524725, 1.4398041043387009), (8.397584218581926, 1.6056121986483556), (8.469351930116943, 1.7860276860462465), (8.511767170082862, 1.9763842816461406), (8.530750119682551, 2.1709724987464085), (8.535956778555175, 2.3671952090825386), (8.538760870928513, 2.563413656113056), (8.537808603483967, 2.75963888567523), (8.532572489045293, 2.95569387369283), (8.51481039514374, 3.15055503924561), (8.475491090199, 3.341414414227855), (8.407975057079398, 3.5247578720951225), (8.31106120632191, 3.693881267878382), (8.186502531679764, 3.844170542185153), (8.037129092933212, 3.969503006795976), (7.868136309330993, 4.066595722602571), (7.6851610460393545, 4.1345014606124835), (7.494133948738579, 4.175703983918254), (7.299554742716083, 4.195335731117524), (7.103587636930088, 4.201242347257079), (6.907607353654015, 4.201247579495785), (6.711783262392657, 4.199924210676329), (6.516154120469764, 4.199300605337186), (6.3205893157042965, 4.199124065727503), (6.125061330396392, 4.199215533011554), (5.929553692683456, 4.199390716114905), (5.734056325661314, 4.199555822314082), (5.538567872823634, 4.1996779078838955), (5.343080582705667, 4.199756585251109), (5.147595618027125, 4.199802318893134), (4.952113560147865, 4.199816465316303), (4.756630145762273, 4.199800962386803), (4.561147894096393, 4.19975794175744), (4.365664285924183, 4.199686628281739), (4.170183390764635, 4.199580045641426), (3.974701139098755, 4.1994405192759245), (3.779218887432876, 4.199264948599335), (3.5837366357669964, 4.199009925409058), (3.3881109820032407, 4.198595803404785), (3.3881109820032407, 4.198595803404785), (3.1927025630391057, 4.198236329227001), (2.997255774324458, 4.197737328683715), (2.801790188307791, 4.197125156755078), (2.6062952436183835, 4.195692686069265), (2.410804949807826, 4.190964292571721), (2.2150827903079318, 4.183555248776983), (2.0190451461927097, 4.16967140647651), (1.8255455254232797, 4.1381578265350925), (1.6399065197169342, 4.077816355401538), (1.4684209619443997, 3.98580995697732), (1.316564535251782, 3.863567226215878), (1.18828627180266, 3.716441712246848), (1.087181058714844, 3.5495077176822467), (1.0159622477774413, 3.3684589840609287), (0.9734102913519926, 3.178145699770326), (0.9534938958331036, 2.9834065228940503), (0.9444216541596013, 2.7872029974331767), (0.9405074066940884, 2.5907339843046135), (0.9396984929007637, 2.3942255355991335), (0.9471365077950047, 2.1980486557983383), (0.9667406161777752, 2.003330698556816), (1.008643508547042, 1.8129062776403588), (1.0777365771700467, 1.6310002804643384), (1.1746683531897695, 1.460860280079107), (1.2993533282606862, 1.3105290994160301), (1.4485447529255744, 1.1851194108376364), (1.618276541798405, 1.0898755162672418), (1.80267831683733, 1.026955253927975), (1.9950098887622332, 0.9923725057420933), (2.190220548481932, 0.9752908935522877), (2.3860145059240736, 0.9666594679897911), (2.581804490740531, 0.9621571992530031), (2.77751667022956, 0.9599051322865064), (2.973129727863096, 0.9587203451227853)], 'speed': 2.0, 'x': 4.033901501422587, 'is_crashed': False, 'is_reversed': False, 'objects_heading': [], 'y': 0.9776927210085827, 'all_wheels_on_track': True, 'distance_from_center': 0.02106558857389254, 'objects_distance_from_center': [], 'objects_distance': [], 'closest_objects': [0, 0], 'track_width': 0.6095984499001538, 'object_in_camera': False, 'heading': 1.173909182022218, 'objects_speed': [], 'progress': 5.425918456624128, 'is_offtrack': False, 'objects_left_of_center': [], 'objects_location': [], 'closest_waypoints': [5, 6], 'track_length': 19.549800178858835, 'steering_angle': 30.0, 'steps': 16.0},
         {'is_left_of_center': True, 'projection_distance': 1.1450366160526708, 'waypoints': [(2.973129727863096, 0.9587203451227853), (3.1686550001583385, 0.957973927514008), (3.3641587621388993, 0.957502662680531), (3.5596536099349976, 0.9571676056167091), (3.7551399311198708, 0.9569079073242543), (3.9506256709448877, 0.9566988842326032), (4.146107922610766, 0.9565304352142532), (4.341591530782978, 0.9563990236634121), (4.537073588662238, 0.9563010645276331), (4.732557196834449, 0.9562337963475989), (4.92803925471371, 0.9561973644632735), (5.123521506379589, 0.9561847441097273), (5.3190037580454685, 0.9562067146676283), (5.514486009711348, 0.9562466104877638), (5.709974462549027, 0.9563314648034498), (5.905463109173326, 0.9564632639275283), (6.10095815075604, 0.9566372843111675), (6.296465594682358, 0.956848729735553), (6.491997261936018, 0.9569796325965199), (6.6875785385640825, 0.9567336689306691), (6.883257677434614, 0.9557806263396478), (7.079130990497134, 0.9538671530427651), (7.275221344572657, 0.9543163504250318), (7.4705043835944585, 0.968040367211689), (7.662157411673801, 1.00506531126039), (7.845235769446617, 1.0715002572806311), (8.014446369208315, 1.1684281333446516), (8.165421648145468, 1.2924605804235763), (8.294117279524725, 1.4398041043387009), (8.397584218581926, 1.6056121986483556), (8.469351930116943, 1.7860276860462465), (8.511767170082862, 1.9763842816461406), (8.530750119682551, 2.1709724987464085), (8.535956778555175, 2.3671952090825386), (8.538760870928513, 2.563413656113056), (8.537808603483967, 2.75963888567523), (8.532572489045293, 2.95569387369283), (8.51481039514374, 3.15055503924561), (8.475491090199, 3.341414414227855), (8.407975057079398, 3.5247578720951225), (8.31106120632191, 3.693881267878382), (8.186502531679764, 3.844170542185153), (8.037129092933212, 3.969503006795976), (7.868136309330993, 4.066595722602571), (7.6851610460393545, 4.1345014606124835), (7.494133948738579, 4.175703983918254), (7.299554742716083, 4.195335731117524), (7.103587636930088, 4.201242347257079), (6.907607353654015, 4.201247579495785), (6.711783262392657, 4.199924210676329), (6.516154120469764, 4.199300605337186), (6.3205893157042965, 4.199124065727503), (6.125061330396392, 4.199215533011554), (5.929553692683456, 4.199390716114905), (5.734056325661314, 4.199555822314082), (5.538567872823634, 4.1996779078838955), (5.343080582705667, 4.199756585251109), (5.147595618027125, 4.199802318893134), (4.952113560147865, 4.199816465316303), (4.756630145762273, 4.199800962386803), (4.561147894096393, 4.19975794175744), (4.365664285924183, 4.199686628281739), (4.170183390764635, 4.199580045641426), (3.974701139098755, 4.1994405192759245), (3.779218887432876, 4.199264948599335), (3.5837366357669964, 4.199009925409058), (3.3881109820032407, 4.198595803404785), (3.3881109820032407, 4.198595803404785), (3.1927025630391057, 4.198236329227001), (2.997255774324458, 4.197737328683715), (2.801790188307791, 4.197125156755078), (2.6062952436183835, 4.195692686069265), (2.410804949807826, 4.190964292571721), (2.2150827903079318, 4.183555248776983), (2.0190451461927097, 4.16967140647651), (1.8255455254232797, 4.1381578265350925), (1.6399065197169342, 4.077816355401538), (1.4684209619443997, 3.98580995697732), (1.316564535251782, 3.863567226215878), (1.18828627180266, 3.716441712246848), (1.087181058714844, 3.5495077176822467), (1.0159622477774413, 3.3684589840609287), (0.9734102913519926, 3.178145699770326), (0.9534938958331036, 2.9834065228940503), (0.9444216541596013, 2.7872029974331767), (0.9405074066940884, 2.5907339843046135), (0.9396984929007637, 2.3942255355991335), (0.9471365077950047, 2.1980486557983383), (0.9667406161777752, 2.003330698556816), (1.008643508547042, 1.8129062776403588), (1.0777365771700467, 1.6310002804643384), (1.1746683531897695, 1.460860280079107), (1.2993533282606862, 1.3105290994160301), (1.4485447529255744, 1.1851194108376364), (1.618276541798405, 1.0898755162672418), (1.80267831683733, 1.026955253927975), (1.9950098887622332, 0.9923725057420933), (2.190220548481932, 0.9752908935522877), (2.3860145059240736, 0.9666594679897911), (2.581804490740531, 0.9621571992530031), (2.77751667022956, 0.9599051322865064), (2.973129727863096, 0.9587203451227853)], 'speed': 2.0, 'x': 4.118181848735966, 'is_crashed': False, 'is_reversed': False, 'objects_heading': [], 'y': 0.9775953652797049, 'all_wheels_on_track': True, 'distance_from_center': 0.02104085807541295, 'objects_distance_from_center': [], 'objects_distance': [], 'closest_objects': [0, 0], 'track_width': 0.6095984166466617, 'object_in_camera': False, 'heading': 0.816198971909553, 'objects_speed': [], 'progress': 5.857024652819286, 'is_offtrack': False, 'objects_left_of_center': [], 'objects_location': [], 'closest_waypoints': [5, 6], 'track_length': 19.549800178858835, 'steering_angle': 20.0, 'steps': 17.0}
     ]
-    # for step in params:
-    #     print(step)
-    #     print(reward_function(step))
-    print(reward_function(params[0]))
+    for step in params:
+        print(step)
+        print(reward_function(step))
+#    print(reward_function(params[0]))
+
 if __name__ == '__main__':
     main()
+    stepRewardsCSV.close()
+    stepLocationsCSV.close()
