@@ -3,8 +3,8 @@
 import math
 
 class HISTORY:
-    stepsPerSecond = 16
-    lookAheadSteps = 3
+    stepsPerSecond = 32
+    lookAheadSteps = 16
     prev_speed=None
     prev_steering_angle=None
     prev_steps=None
