@@ -33,6 +33,9 @@ def calcDistanceFromCenter(closest_waypoints,location,stepParams, params):
     print("calcDistance: track_direction: "+str(track_direction)+", stepHeading: "+str(stepHeading)+", segOH: "+str(segOH)+", segHZ: "+str(segHZ))
     return segHZ
 
+def isPOSHeading(currentHeading):
+	return True if currentHeading < 90 or currentHeading > -90 else False
+
 def getClosestWaypoints(location,stepParams, params):
     waypoints=params["waypoints"]
     startWaypoints = params["closest_waypoints"]
@@ -69,8 +72,14 @@ def getDistanceCenterLine (track_width, distance_from_center):
 
 def getCurLocation(stepDuration, params):
     stepHypo = stepDuration * params["speed"]
-    stepOpp = math.sin(params["heading"]) * stepHypo
-    stepAdj = math.cos(params["heading"]) * stepHypo
+	futureHeading = params["heading"]
+	if isPOSHeading(params["heading"]):
+		futureHeading = params["heading"] + params["steering_angle"]
+	else:
+		futureHeading = params["heading"] - params["steering_angle"]
+
+    stepOpp = math.sin(futureHeading) * stepHypo
+    stepAdj = math.cos(futureHeading) * stepHypo
     x = stepAdj + params["x"]
     y = stepOpp + params["y"]
     print("step location: "+ str(x) + ", " + str(y))
